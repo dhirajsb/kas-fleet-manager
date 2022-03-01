@@ -14,6 +14,7 @@ import (
 
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/pkg/auth"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/pkg/errors"
+	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/pkg/handlers"
 	coreservices "github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/pkg/services"
 	"github.com/gorilla/mux"
 )
@@ -23,13 +24,18 @@ var (
 )
 
 type ConnectorNamespaceHandler struct {
-	di.Inject
-	Bus     signalbus.SignalBus
-	Service services.ConnectorNamespaceService
+	Bus                      signalbus.SignalBus
+	Service                  services.ConnectorNamespaceService
+	userAuthorizationService authorization.UserAuthorizationService
 }
 
-func NewConnectorNamespaceHandler(handler ConnectorNamespaceHandler) *ConnectorNamespaceHandler {
-	return &handler
+func NewConnectorNamespaceHandler(bus signalbus.SignalBus, service services.ConnectorNamespaceService,
+	userAuthorizationService authorization.UserAuthorizationService) *ConnectorNamespaceHandler {
+	return &ConnectorNamespaceHandler{
+		Bus:                      bus,
+		Service:                  service,
+		userAuthorizationService: userAuthorizationService,
+	}
 }
 
 func (h *ConnectorNamespaceHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -49,12 +55,12 @@ func (h *ConnectorNamespaceHandler) Create(w http.ResponseWriter, r *http.Reques
 						public.CONNECTORNAMESPACETENANTKIND_USER, public.CONNECTORNAMESPACETENANTKIND_ORGANISATION))
 			}
 			ctx := r.Context()
-			claims, err := auth.GetClaimsFromContext(ctx)
+			userInfo, err := h.userAuthorizationService.GetUserInfo(ctx)
 			if err != nil {
-				return nil, errors.Unauthenticated("user not authenticated")
+				return nil, errors.Unauthenticated("user not authenticated: %s", err)
 			}
-			userID := auth.GetUsernameFromClaims(claims)
-			organisationId := auth.GetOrgIdFromClaims(claims)
+			userID := userInfo.UserID
+			organisationId := userInfo.OrganisationID
 
 			convResource, serr := presenters.ConvertConnectorNamespaceRequest(&resource, userID, organisationId)
 			if serr != nil {

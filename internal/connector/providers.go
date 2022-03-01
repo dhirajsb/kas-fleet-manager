@@ -8,6 +8,7 @@ import (
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/connector/internal/migrations"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/connector/internal/routes"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/connector/internal/services"
+	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/connector/internal/services/authorization"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/connector/internal/services/vault"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/internal/connector/internal/workers"
 	"github.com/bf2fc6cc711aee1a0c2a/kas-fleet-manager/pkg/auth"
@@ -47,6 +48,7 @@ func ConfigProviders(kafkaEnabled bool) di.Option {
 
 func serviceProviders() di.Option {
 	return di.Options(
+		di.Provide(authorization.NewUserAuthorizationService, di.As(new(authorization.UserAuthorizationService))),
 		di.Provide(services.NewConnectorsService, di.As(new(services.ConnectorsService))),
 		di.Provide(services.NewConnectorTypesService, di.As(new(services.ConnectorTypesService))),
 		di.Provide(services.NewConnectorClusterService, di.As(new(services.ConnectorClusterService)), di.As(new(auth.AuthAgentService))),

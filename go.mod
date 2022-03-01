@@ -23,11 +23,10 @@ require (
 	github.com/go-resty/resty/v2 v2.6.0
 	github.com/goava/di v1.11.0
 	github.com/golang-jwt/jwt/v4 v4.2.0
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
+	github.com/golang/glog v1.0.0
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/handlers v1.4.2
 	github.com/gorilla/mux v1.8.0
-	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-memdb v1.3.2 // indirect
 	github.com/itchyny/gojq v0.12.5
 	github.com/lib/pq v1.10.4
@@ -36,20 +35,21 @@ require (
 	github.com/mendsley/gojwk v0.0.0-20141217222730-4d5ec6e58103
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/gomega v1.17.0
+	github.com/open-policy-agent/opa v0.37.2
 	github.com/openshift-online/ocm-sdk-go v0.1.235
 	github.com/openshift/api v3.9.0+incompatible
 	github.com/operator-framework/api v0.3.25
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0
-	github.com/prometheus/client_golang v1.10.0
+	github.com/prometheus/client_golang v1.12.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.20.0
 	github.com/redhat-developer/app-services-sdk-go/serviceaccounts v0.3.0
 	github.com/rs/xid v1.2.1
 	github.com/santhosh-tekuri/jsonschema/v3 v3.0.1
 	github.com/selvatico/go-mocket v1.0.7
-	github.com/spf13/cobra v1.2.1
+	github.com/spf13/cobra v1.3.0
 	github.com/spf13/pflag v1.0.5
 	github.com/spyzhov/ajson v0.4.2
 	github.com/xeipuuv/gojsonschema v1.2.0
