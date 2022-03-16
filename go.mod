@@ -31,6 +31,7 @@ require (
 	github.com/hashicorp/go-memdb v1.3.2 // indirect
 	github.com/itchyny/gojq v0.12.5
 	github.com/lib/pq v1.10.4
+	github.com/looplab/fsm v0.3.0
 	github.com/mattn/go-sqlite3 v1.14.3 // indirect
 	github.com/mendsley/gojwk v0.0.0-20141217222730-4d5ec6e58103
 	github.com/olekukonko/tablewriter v0.0.5
