@@ -81,10 +81,11 @@ func (k *ConnectorManager) Stop() {
 }
 
 func (k *ConnectorManager) Reconcile() []error {
-	glog.V(5).Infoln("reconciling connectors")
+	glog.V(5).Infoln("Reconciling connectors...")
 	var errs []error
 
 	if !k.startupReconcileDone {
+		glog.V(5).Infoln("Reconciling startup connector catalog updates...")
 
 		// We only need to reconcile channel updates once per process startup since,
 		// configured channel settings are only loaded on startup.
@@ -98,6 +99,7 @@ func (k *ConnectorManager) Reconcile() []error {
 
 		k.startupReconcileDone = true
 		k.startupReconcileWG.Done()
+		glog.V(5).Infoln("Catalog updates processed")
 	}
 
 	if k.ctx == nil {
@@ -109,64 +111,22 @@ func (k *ConnectorManager) Reconcile() []error {
 	}
 
 	// reconcile assigning connectors in "ready" desired state with "assigning" phase and a valid namespace id
-	if serviceErr := k.connectorService.ForEach(func(connector *dbapi.Connector) *serviceError.ServiceError {
-		return InDBTransaction(k.ctx, func(ctx context.Context) error {
-			if err := k.reconcileAssigning(ctx, connector); err != nil {
-				errs = append(errs, err)
-				glog.Errorf("failed to reconcile assigning connector %s: %v", connector.ID, err)
-			}
-			return nil
-		})
-	}, "desired_state = ? AND phase = ? AND connectors.namespace_id IS NOT NULL",
-		dbapi.ConnectorReady, dbapi.ConnectorStatusPhaseAssigning); serviceErr != nil {
-		errs = append(errs, serviceErr)
-	}
+	k.doReconcile(errs, "assigning", k.reconcileAssigning,
+		"desired_state = ? AND phase = ? AND connectors.namespace_id IS NOT NULL", dbapi.ConnectorReady, dbapi.ConnectorStatusPhaseAssigning)
 
 	// reconcile unassigned connectors in "unassigned" desired state and "deleted" phase
-	if serviceErr := k.connectorService.ForEach(func(connector *dbapi.Connector) *serviceError.ServiceError {
-		return InDBTransaction(k.ctx, func(ctx context.Context) error {
-			// we can remove the connector from the namespace and set phase to "assigning" now...
-			if err := k.reconcileUnassigned(ctx, connector); err != nil {
-				errs = append(errs, err)
-				glog.Errorf("failed to reconcile unassigned connector %s: %v", connector.ID, err)
-			}
-			return nil
-		})
-	}, "desired_state = ? AND phase = ?", dbapi.ConnectorUnassigned, dbapi.ConnectorStatusPhaseDeleted); serviceErr != nil {
-		errs = append(errs, serviceErr)
-	}
+	k.doReconcile(errs, "unassigned", k.reconcileUnassigned,
+		"desired_state = ? AND phase = ?", dbapi.ConnectorUnassigned, dbapi.ConnectorStatusPhaseDeleted)
 
 	// reconcile deleted connectors with no deployments
-	if serviceErr := k.connectorService.ForEach(func(connector *dbapi.Connector) *serviceError.ServiceError {
-		return InDBTransaction(k.ctx, func(ctx context.Context) error {
-			// ok to delete the connector without deployment
-			if err := k.connectorService.Delete(ctx, connector.ID); err != nil {
-				errs = append(errs, err)
-				glog.Errorf("failed to reconcile deleted connector %s: %v", connector.ID, err)
-			}
-			return nil
-		})
-	}, "desired_state = ? AND phase IN ?", dbapi.ConnectorDeleted,
-		[]string{string(dbapi.ConnectorStatusPhaseAssigning), string(dbapi.ConnectorStatusPhaseDeleted)}); serviceErr != nil {
-		errs = append(errs, serviceErr)
-	}
+	k.doReconcile(errs, "deleted", k.reconcileDeleted,
+		"desired_state = ? AND phase IN ?", dbapi.ConnectorDeleted,
+		[]string{string(dbapi.ConnectorStatusPhaseAssigning), string(dbapi.ConnectorStatusPhaseDeleted)})
 
-	// Process any connector updates...
-	if serviceErr := k.connectorService.ForEach(func(connector *dbapi.Connector) *serviceError.ServiceError {
-		return InDBTransaction(k.ctx, func(ctx context.Context) error {
-			if err := k.reconcileConnectorUpdate(ctx, connector); err != nil {
-				return serviceError.GeneralError("failed to reconcile assigned connector %s: %v", connector.ID, err.Error())
-			}
-			if err := db.AddPostCommitAction(ctx, func() {
-				k.lastVersion = connector.Version
-			}); err != nil {
-				return err
-			}
-			return nil
-		})
-	}, "version > ? AND desired_state != ? AND phase != ?", k.lastVersion, dbapi.ConnectorUnassigned, dbapi.ConnectorStatusPhaseAssigning); serviceErr != nil {
-		errs = append(errs, errors.Wrap(serviceErr, "connector manager"))
-	}
+	// reconcile connector updates...
+	k.doReconcile(errs, "updated", k.reconcileConnectorUpdate,
+		"version > ? AND desired_state != ? AND phase != ?", k.lastVersion,
+		dbapi.ConnectorUnassigned, dbapi.ConnectorStatusPhaseAssigning)
 
 	return errs
 }
@@ -193,7 +153,6 @@ func (k *ConnectorManager) ReconcileConnectorCatalogEntry(id string, channel str
 	return nil
 }
 
-//goland:noinspection VacuumSwitchStatement
 func (k *ConnectorManager) reconcileAssigning(ctx context.Context, connector *dbapi.Connector) error {
 	var namespace *dbapi.ConnectorNamespace
 	namespace, err := k.connectorClusterService.FindAvailableNamespace(connector.Owner, connector.OrganisationId, connector.NamespaceId)
@@ -254,6 +213,13 @@ func (k *ConnectorManager) reconcileUnassigned(ctx context.Context, connector *d
 	return nil
 }
 
+func (k *ConnectorManager) reconcileDeleted(ctx context.Context, connector *dbapi.Connector) error {
+	if err := k.connectorService.Delete(ctx, connector.ID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (k *ConnectorManager) reconcileConnectorUpdate(ctx context.Context, connector *dbapi.Connector) error {
 
 	// Get the deployment for the connector...
@@ -271,6 +237,29 @@ func (k *ConnectorManager) reconcileConnectorUpdate(ctx context.Context, connect
 	}
 
 	return nil
+}
+
+func (k *ConnectorManager) doReconcile(errs []error, reconcilePhase string, reconcileFunc func(ctx context.Context, connector *dbapi.Connector) error, query string, args ...interface{}) {
+	var count int64
+	var serviceErrs []error
+	glog.V(5).Infof("Reconciling %s connectors...", reconcilePhase)
+	if serviceErrs = k.connectorService.ForEach(func(connector *dbapi.Connector) *serviceError.ServiceError {
+		return InDBTransaction(k.ctx, func(ctx context.Context) error {
+			if err := reconcileFunc(ctx, connector); err != nil {
+				glog.Errorf("failed to reconcile %s connector %s: %v", reconcilePhase, connector.ID, err)
+				return err
+			}
+			count++
+			return nil
+		})
+	}, query, args...); len(serviceErrs) > 0 {
+		errs = append(errs, serviceErrs...)
+	}
+	if count == 0 && len(errs) == 0{
+		glog.V(5).Infof("No %s connectors", reconcilePhase)
+	} else {
+		glog.V(5).Infof("Reconciled %d %s connectors with %d errors", count, reconcilePhase, len(serviceErrs))
+	}
 }
 
 func InDBTransaction(ctx context.Context, f func(ctx context.Context) error) (rerr *serviceError.ServiceError) {
